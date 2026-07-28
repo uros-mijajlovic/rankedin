@@ -69,6 +69,7 @@ def _core(rounds, label, me_id):
     games_out, ids_seen = {}, set()
     overall_num, overall_den = defaultdict(float), defaultdict(float)
     z_by = defaultdict(list)
+    all_pair = defaultdict(float)      # global head-to-heads across every game → overall ELO
 
     for g in [s for s in SLUG_ORDER if s in rounds]:
         skill = defaultdict(list)
@@ -100,9 +101,11 @@ def _core(rounds, label, me_id):
             for a in range(len(entries)):
                 for b in range(a + 1, len(entries)):
                     ia, va = entries[a]; ib, vb = entries[b]
-                    if va["sec"] < vb["sec"]: pairwins[(ia, ib)] += 1
-                    elif vb["sec"] < va["sec"]: pairwins[(ib, ia)] += 1
-                    else: pairwins[(ia, ib)] += 0.5; pairwins[(ib, ia)] += 0.5
+                    if va["sec"] < vb["sec"]: pairwins[(ia, ib)] += 1; all_pair[(ia, ib)] += 1
+                    elif vb["sec"] < va["sec"]: pairwins[(ib, ia)] += 1; all_pair[(ib, ia)] += 1
+                    else:
+                        pairwins[(ia, ib)] += 0.5; pairwins[(ib, ia)] += 0.5
+                        all_pair[(ia, ib)] += 0.5; all_pair[(ib, ia)] += 0.5
         elo = _bradley_terry(pairwins, sorted(pool))
         rows = []
         for i in sorted(pool):
@@ -124,12 +127,14 @@ def _core(rounds, label, me_id):
         rows.sort(key=lambda r: -r["elo"])
         games_out[g] = {"players": rows, "nplayers": len(rows)}
 
+    overall_elo = _bradley_terry(all_pair, sorted(ids_seen))
     players_out = {}
     for i in ids_seen:
         s = overall_num[i] / overall_den[i] if overall_den.get(i) else 0.0
         iq = max(60.0, min(145.0, 100 + 15 * s))
         ngames = sum(1 for g in games_out if any(r["name"] == label[i] for r in games_out[g]["players"]))
-        players_out[label[i]] = {"overallIQ": round(iq, 1), "games": ngames, "me": i == me_id}
+        players_out[label[i]] = {"overallIQ": round(iq, 1), "overallElo": round(overall_elo.get(i, 1500)),
+                                 "games": ngames, "me": i == me_id}
     return games_out, players_out, z_by
 
 
@@ -207,8 +212,8 @@ def compute_dashboard(results, observations, me_name, me_urn=None):
         hf_count_by_label[label[i]] += c
     for nm, v in hf_players.items():
         if hf_count_by_label[nm] > 0:
-            hintFreeBoard.append({"name": nm, "iq": v["overallIQ"], "rounds": hf_count_by_label[nm], "me": v["me"]})
-    hintFreeBoard.sort(key=lambda r: -r["iq"])
+            hintFreeBoard.append({"name": nm, "elo": v["overallElo"], "rounds": hf_count_by_label[nm], "me": v["me"]})
+    hintFreeBoard.sort(key=lambda r: -r["elo"])
 
     # ---- head-to-head: me vs everyone ----
     h2h = defaultdict(lambda: {"w": 0, "l": 0, "t": 0})
