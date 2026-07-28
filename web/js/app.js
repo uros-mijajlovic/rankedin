@@ -46,7 +46,7 @@ onAuthStateChanged(auth, async user => {
 
 function fatal(e) {
   document.getElementById("scr-loading").innerHTML =
-    '<div class="welcome"><div class="brandmark">😕</div><p class="lead">Couldn't connect (' + (e.message || e) + '). Refresh the page in a moment.</p></div>';
+    '<div class="welcome"><div class="brandmark">😕</div><p class="lead">Could not connect (' + (e.message || e) + '). Refresh the page in a moment.</p></div>';
   show("loading");
 }
 
@@ -85,6 +85,6 @@ async function openDashboard(me) {
     const D = await api("/api/leaderboard");
     renderDashboard(D, $("dash-root"));
   } catch (e) {
-    $("dash-root").innerHTML = '<div class="wrap"><div class="empty">Couldn't load the leaderboard (' + e.message + '). Try again in a moment.</div></div>';
+    $("dash-root").innerHTML = '<div class="wrap"><div class="empty">Could not load the leaderboard (' + e.message + '). Try again in a moment.</div></div>';
   }
 }
