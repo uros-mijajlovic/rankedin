@@ -47,24 +47,27 @@ def get_cursor(uid):
     return out
 
 
-def upsert_batch(uid, name, results, observations):
+def upsert_batch(uid, name, urn, results, observations):
     """Idempotent upsert of a batch. Returns number of result rows written.
     Dedups by document id first — Firestore rejects writing the same doc twice in
-    one commit — so a batch with repeats can't blow up a whole sync."""
+    one commit — so a batch with repeats can't blow up a whole sync.
+    `urn` is the syncing user's own LinkedIn profile id (stamped on their results);
+    each observation carries the observed player's own urn."""
     docs = {}  # docid -> (collection, data)  (last write wins within a batch)
     n = 0
     for r in results:
         rid = f"{uid}__{_safe(r['game'])}__{int(r['pz'])}"
         docs[(RESULTS, rid)] = {
-            "uid": uid, "name": name, "game": r["game"], "pz": int(r["pz"]),
+            "uid": uid, "name": name, "urn": urn, "game": r["game"], "pz": int(r["pz"]),
             "sec": int(r["sec"]), "rank": r.get("rank"),
             "hint": int(bool(r.get("hint"))), "miss": int(bool(r.get("miss"))),
         }
         n += 1
     for o in observations:
-        oid = f"{_safe(o['game'])}__{int(o['pz'])}__{_safe(o['name'])}"
+        key = o.get("urn") or o["name"]        # prefer urn so a person dedups across name spellings
+        oid = f"{_safe(o['game'])}__{int(o['pz'])}__{_safe(key)}"
         docs[(OBS, oid)] = {
-            "game": o["game"], "pz": int(o["pz"]), "name": o["name"],
+            "game": o["game"], "pz": int(o["pz"]), "name": o["name"], "urn": o.get("urn"),
             "sec": int(o["sec"]), "rank": o.get("rank"),
             "hint": int(bool(o.get("hint"))), "miss": int(bool(o.get("miss"))),
             "srcUid": uid,
@@ -103,10 +106,10 @@ def load_dataset():
     results, observations = [], []
     for d in _db.collection(RESULTS).stream():
         r = d.to_dict()
-        results.append({"name": r["name"], "game": r["game"], "pz": r["pz"],
+        results.append({"name": r["name"], "urn": r.get("urn"), "game": r["game"], "pz": r["pz"],
                         "sec": r["sec"], "rank": r.get("rank"), "hint": r.get("hint"), "miss": r.get("miss")})
     for d in _db.collection(OBS).stream():
         o = d.to_dict()
-        observations.append({"name": o["name"], "game": o["game"], "pz": o["pz"],
+        observations.append({"name": o["name"], "urn": o.get("urn"), "game": o["game"], "pz": o["pz"],
                              "sec": o["sec"], "rank": o.get("rank"), "hint": o.get("hint"), "miss": o.get("miss")})
     return results, observations

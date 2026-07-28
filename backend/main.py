@@ -38,6 +38,7 @@ class Row(BaseModel):
 
 class ObsRow(Row):
     name: str
+    urn: Optional[str] = None
 
 class ContribBody(BaseModel):
     results: List[Row] = []
@@ -48,7 +49,7 @@ class ContribBody(BaseModel):
 _cache = {"at": 0, "data": None}
 _lock = threading.Lock()
 
-def _leaderboard_for(me_name):
+def _leaderboard_for(me_name, me_urn=None):
     with _lock:
         if _cache["data"] is None or time.time() - _cache["at"] > 60:
             results, observations = store.load_dataset()
@@ -56,8 +57,8 @@ def _leaderboard_for(me_name):
             _cache["at"] = time.time()
             _cache["data"] = True
         results, observations = _cache["raw"]
-    # me_name differs per user, so compute the "me" flag fresh (cheap vs the DB read)
-    return compute.compute_dashboard(results, observations, me_name)
+    # me differs per user, so compute the "me" flag fresh (cheap vs the DB read)
+    return compute.compute_dashboard(results, observations, me_name, me_urn)
 
 
 # ---- endpoints ----
@@ -90,7 +91,7 @@ def contrib(body: ContribBody, user=Depends(verify)):
         raise HTTPException(status_code=400, detail="Call /api/user/link first")
     results = [r.dict() for r in body.results]
     observations = [o.dict() for o in body.observations]
-    added = store.upsert_batch(user["uid"], name, results, observations)
+    added = store.upsert_batch(user["uid"], name, u.get("linkedinUrn"), results, observations)
     contributed = store.bump_and_maybe_unlock(user["uid"], added)
     return {"ok": True, "written": added, "contributed": contributed}
 
@@ -104,4 +105,4 @@ def leaderboard(user=Depends(verify)):
     u = store.get_user(user["uid"]) or {}
     if not u.get("contributed"):
         raise HTTPException(status_code=403, detail="Sync your own data first")
-    return _leaderboard_for(u.get("name"))
+    return _leaderboard_for(u.get("name"), u.get("linkedinUrn"))

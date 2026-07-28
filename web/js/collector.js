@@ -72,7 +72,8 @@
     return els.filter(function (e) { return e.ranking != null && e.gameScore && e.gameScore.timeElapsed != null; })
       .map(function (e) {
         var pid = e.playerDetails.player["*profile"];
-        return { rank: e.ranking, name: prof[pid] || "?", sec: e.gameScore.timeElapsed,
+        var idm = (pid.match(/ACoAA[A-Za-z0-9_-]+/) || [null])[0];   // the player's stable LinkedIn id
+        return { rank: e.ranking, name: prof[pid] || "?", urn: idm, sec: e.gameScore.timeElapsed,
           hint: e.completionAttributes ? (e.completionAttributes.isHintFree ? 1 : 0) : 0,
           miss: e.completionAttributes ? (e.completionAttributes.isMistakeFree ? 1 : 0) : 0,
           mine: pid.indexOf(ME) >= 0 };
@@ -156,7 +157,7 @@
           if (rows2 && rows2.length) {
             // convert delta-day to an approximate puzzle number for that game
             var apz = top - d;
-            rows2.forEach(function (r) { obs.push({ game: slug, pz: apz, name: r.name, sec: r.sec, rank: r.rank, hint: r.hint, miss: r.miss }); });
+            rows2.forEach(function (r) { obs.push({ game: slug, pz: apz, name: r.name, urn: r.urn, sec: r.sec, rank: r.rank, hint: r.hint, miss: r.miss }); });
           }
         }
         if (obs.length) await sendBatch([], obs);

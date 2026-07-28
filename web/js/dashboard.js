@@ -39,6 +39,19 @@ export function renderDashboard(D, root) {
     <div class="tabs" id="tabs"></div>
     <div class="tablewrap"><table id="lb"><thead></thead><tbody></tbody></table></div>
 
+    <div class="h2">Circle awards</div>
+    <div class="awards" id="awards"></div>
+
+    <div class="h2">Hint-free leaderboard</div>
+    <div class="conf" style="margin:-4px 0 12px">Skill measured <b style="color:var(--ink2)">only from solves where no hints were used</b> — the purist ranking. A hint-assisted time never counts here.</div>
+    <div class="tablewrap"><table id="hflb"><thead></thead><tbody></tbody></table></div>
+
+    <div class="h2">Your head-to-head</div>
+    <div class="h2hgrid" id="h2h"></div>
+
+    <div class="h2">Your records &amp; form</div>
+    <div id="records"></div>
+
     <div class="h2">Your journey · all-time solve times</div>
     <div class="spark-grid" id="sparks"></div>
   </div>`;
@@ -71,6 +84,10 @@ export function renderDashboard(D, root) {
   drawRadar($("#radar"), D, iqColor);
   buildGameCards($("#gamecards"), D, iqColor);
   buildLB(root, D, playerObs);
+  buildAwards($("#awards"), D);
+  buildHintFree(root, D, iqColor);
+  buildH2H($("#h2h"), D);
+  buildRecords($("#records"), D, iqColor);
   buildSparks($("#sparks"), D);
 
   const redraw = () => { drawBell($("#bell"), meOverall, iqColor); drawRadar($("#radar"), D, iqColor); };
@@ -180,4 +197,68 @@ function buildSparks(host, D) {
     x.beginPath(); roll.forEach((v, i) => { const px = X(i), py = Y(v); i === 0 ? x.moveTo(px, py) : x.lineTo(px, py); }); x.strokeStyle = css('--accent'); x.lineWidth = 2; x.stroke();
     const li = t.length - 1; x.beginPath(); x.arc(X(li), Y(roll[li]), 3, 0, 7); x.fillStyle = css('--accent'); x.fill();
   });
+}
+
+// ---------- Circle awards ----------
+function buildAwards(host, D) {
+  const A = D.awards || {};
+  const defs = [["🧼", "No-Hints Hero", "noHints"], ["💎", "Flawless", "flawless"], ["🏋️", "Grinder", "grinder"], ["🎯", "Most Consistent", "consistent"]];
+  host.innerHTML = defs.map(([emo, title, key]) => {
+    const a = A[key]; if (!a) return "";
+    return `<div class="award"><div class="aw-emo">${emo}</div><div class="aw-body"><div class="aw-title">${title}</div><div class="aw-name">${a.name}</div><div class="aw-val">${a.val}</div></div></div>`;
+  }).join("") || '<div class="conf">Awards appear once a few players have 10+ rounds.</div>';
+}
+
+// ---------- Hint-free leaderboard ----------
+function buildHintFree(root, D, iqColor) {
+  const rows = D.hintFreeBoard || [];
+  root.querySelector("#hflb thead").innerHTML = '<tr><th>#</th><th class="l">Player</th><th>Hint-free IQ</th><th>Hint-free rounds</th></tr>';
+  const ranked = rows.filter(r => r.rounds >= 10), rest = rows.filter(r => r.rounds < 10);
+  const cell = (r, rk) => `<tr class="${r.me ? 'me' : ''}${rk === null ? ' muted' : ''}">
+    <td class="rk">${rk === null ? '–' : rk}</td><td class="nm l">${r.name}</td>
+    <td class="iqv" style="color:${rk === null ? 'var(--ink3)' : iqColor(r.iq)}">${r.iq.toFixed(1)}</td>
+    <td class="dv">${r.rounds}</td></tr>`;
+  let html = ranked.map((r, i) => cell(r, i + 1)).join("");
+  if (rest.length) { html += `<tr class="divider"><td colspan="4">Not enough hint-free rounds (&lt; 10) — unranked</td></tr>`; html += rest.map(r => cell(r, null)).join(""); }
+  root.querySelector("#hflb tbody").innerHTML = html || '<tr><td colspan="4" style="padding:20px;color:var(--ink3)">No hint-free data yet.</td></tr>';
+}
+
+// ---------- Head-to-head ----------
+function buildH2H(host, D) {
+  const list = (D.h2h || []).filter(h => (h.w + h.l + h.t) >= 3);
+  if (!list.length) { host.innerHTML = '<div class="conf">Head-to-head appears once you share opponents on the same puzzles.</div>'; return; }
+  const rec = h => h.w - h.l;
+  const nemesis = list.reduce((a, b) => rec(b) < rec(a) ? b : a);
+  const victim = list.reduce((a, b) => rec(b) > rec(a) ? b : a);
+  const tag = h => h === nemesis && rec(h) < 0 ? '<span class="h2h-tag nem">nemesis</span>' : (h === victim && rec(h) > 0 ? '<span class="h2h-tag vic">favourite win</span>' : '');
+  host.innerHTML = list.slice(0, 12).map(h => {
+    const tot = h.w + h.l + h.t, wp = 100 * h.w / tot, lp = 100 * h.l / tot, tp = 100 * h.t / tot;
+    const good = h.w >= h.l;
+    return `<div class="h2h-row">
+      <div class="h2h-name">${h.name}${tag(h)}</div>
+      <div class="h2h-bar"><i style="width:${wp}%" class="w"></i><i style="width:${tp}%" class="t"></i><i style="width:${lp}%" class="l"></i></div>
+      <div class="h2h-rec"><b style="color:${good ? 'var(--hi)' : 'var(--lo)'}">${h.w}</b>–${h.l}${h.t ? '–' + h.t : ''}</div>
+    </div>`;
+  }).join("");
+}
+
+// ---------- Records & form ----------
+function buildRecords(host, D, iqColor) {
+  const m = D.meExtra || {};
+  const pctOrDash = v => v == null ? "—" : Math.round(v * 100) + "%";
+  const arrow = m.form > 0.12 ? "↗" : (m.form < -0.12 ? "↘" : "→");
+  const formColor = m.form > 0.12 ? "var(--hi)" : (m.form < -0.12 ? "var(--lo)" : "var(--ink2)");
+  const tiles = [
+    ["Form", `<span style="color:${formColor}">${arrow} ${m.formLabel || "steady"}</span>`],
+    ["Win rate", pctOrDash(m.winRate)],
+    ["Hint-free", pctOrDash(m.hintFree)],
+    ["Flawless", pctOrDash(m.flawless)],
+  ];
+  const recs = m.records || {};
+  const recChips = GAME_ORDER.filter(g => recs[g] != null).map(g =>
+    `<div class="rec-chip"><span class="rc-g">${NICE[g]}</span><b>${Math.floor(recs[g] / 60)}:${String(recs[g] % 60).padStart(2, '0')}</b></div>`).join("");
+  host.innerHTML = `
+    <div class="stats" style="margin-top:0">${tiles.map(t => `<div class="stat"><div class="k">${t[0]}</div><div class="v" style="font-size:22px">${t[1]}</div></div>`).join("")}</div>
+    <div class="rec-label">Personal records — fastest solve per game</div>
+    <div class="rec-grid">${recChips || '<span class="conf">No records yet.</span>'}</div>`;
 }
