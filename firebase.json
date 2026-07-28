@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "site": "rankedin",
+    "public": "web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/sync", "destination": "/sync.html" }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|css|html|txt)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ]
+  }
+}

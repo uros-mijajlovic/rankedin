@@ -1,0 +1,22 @@
+# secrets / project-specific config (NEVER commit)
+web/config.js
+.firebaserc
+
+# built artifact (contains the deployed sync URL); regenerate with build_bookmarklet.py
+web/bookmarklet.txt
+
+# firebase / tooling caches
+.firebase/
+
+# python
+__pycache__/
+*.pyc
+backend/venv/
+venv/
+.env
+*.serviceaccount.json
+*-key.json
+
+# misc
+.DS_Store
+node_modules/

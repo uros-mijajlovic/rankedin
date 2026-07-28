@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rankedin — compare with your friends</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app">
+  <!-- SCREEN: loading -->
+  <section id="scr-loading" class="screen center">
+    <div class="brandmark">🧠</div>
+    <div class="spinner"></div>
+  </section>
+
+  <!-- SCREEN: welcome / onboarding (not yet contributed) -->
+  <section id="scr-welcome" class="screen center hidden">
+    <div class="welcome">
+      <div class="brandmark">🧠</div>
+      <div class="eyebrow">Rankedin</div>
+      <h1>Welcome to <em>Rankedin</em></h1>
+      <p class="lead">Compare yourself with friends across <b>many more days</b> of LinkedIn games than LinkedIn itself shows — an IQ &amp; ELO leaderboard over a shared, ever-growing pool of results.</p>
+      <p class="fine">No account, no passwords. You just <b>install a small tool on your computer</b> and sync your results through your already-logged-in LinkedIn. You only see other people's data once you share your own.</p>
+      <div id="welcome-mobile" class="callout warn hidden">📵 Open this page on a <b>computer</b> (Chrome or Firefox). Sync doesn't work on phones.</div>
+      <button id="btn-start" class="btn primary big">Continue to install →</button>
+    </div>
+  </section>
+
+  <!-- SCREEN: install + sync -->
+  <section id="scr-install" class="screen hidden">
+    <div class="install">
+      <div class="eyebrow">Step 2 / 2 · Install</div>
+      <h1>Add your results</h1>
+
+      <div id="install-demo"></div>
+
+      <ol class="steps">
+        <li>
+          <div class="stepnum">1</div>
+          <div class="stepbody">
+            <h3>Drag the button up to your bookmarks bar</h3>
+            <p>If the bar isn't visible in Chrome: <kbd>⌘⇧B</kbd> (Mac) / <kbd>Ctrl+Shift+B</kbd>.</p>
+            <a id="bm-link" class="bookmarklet" href="#">🎮 Rankedin Sync</a>
+            <p class="hint">Drag this button ↑ up to the bar. Don't click it here.</p>
+          </div>
+        </li>
+        <li>
+          <div class="stepnum">2</div>
+          <div class="stepbody">
+            <h3>Open LinkedIn and log in</h3>
+            <p>Go to <a href="https://www.linkedin.com" target="_blank" rel="noopener">linkedin.com</a> in the same browser, as you normally would.</p>
+          </div>
+        </li>
+        <li>
+          <div class="stepnum">3</div>
+          <div class="stepbody">
+            <h3>Click <b>🎮 Rankedin Sync</b> in the bar</h3>
+            <p>A window opens and pulls your results (~a minute). <b>Don't close the LinkedIn tab while it runs.</b> If it stops halfway — just click it again; it resumes where it left off.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div id="sync-status" class="syncbox hidden"></div>
+
+      <div class="callout">🔒 You won't see anyone else's data until you share your own. Only your result per round (number, time) is shared — never your LinkedIn password or cookies.</div>
+    </div>
+  </section>
+
+  <!-- SCREEN: dashboard -->
+  <section id="scr-dashboard" class="screen hidden">
+    <header class="topbar">
+      <div class="eyebrow">🧠 Rankedin</div>
+      <div class="topbar-right">
+        <span id="who" class="who"></span>
+        <button id="btn-resync" class="btn ghost sm">↻ Re-sync</button>
+      </div>
+    </header>
+    <div id="dash-root"></div>
+  </section>
+</div>
+
+<footer class="gfoot">
+  <span class="gfoot-brand">🧠 Rankedin</span>
+  <a href="https://github.com/uros-mijajlovic/rankedin" target="_blank" rel="noopener">Open source on GitHub</a>
+  <a href="mailto:urosmijajlovic@gmail.com">urosmijajlovic@gmail.com</a>
+</footer>
+
+<div id="tt" class="tt"></div>
+
+<script src="/config.js"></script>
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rankedin Sync</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔄</text></svg>">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<section class="screen center">
+  <div class="welcome" style="max-width:520px">
+    <div class="brandmark">🔄</div>
+    <div class="eyebrow">Rankedin Sync</div>
+    <h1 id="s-title">Connecting…</h1>
+    <p class="lead" id="s-msg">Waiting to connect with the LinkedIn window.</p>
+
+    <div id="s-login" class="hidden"></div>
+
+    <div id="s-box" class="syncbox hidden" style="text-align:left">
+      <h3><span id="s-dot" class="dot-run">●</span> <span id="s-stage">Syncing</span></h3>
+      <div class="progress"><i id="s-bar"></i></div>
+      <div class="rows">
+        <div>Results uploaded: <b id="s-res">0</b></div>
+        <div>Leaderboards (14 days): <b id="s-obs">0</b></div>
+        <div id="s-note" style="color:var(--ink3)"></div>
+      </div>
+    </div>
+
+    <p class="fine" id="s-hint">Don't close the LinkedIn tab while this runs. If it stops halfway — go back and click Rankedin Sync again; it resumes where it left off.</p>
+  </div>
+</section>
+
+<footer class="gfoot">
+  <span class="gfoot-brand">🧠 Rankedin</span>
+  <a href="https://github.com/uros-mijajlovic/rankedin" target="_blank" rel="noopener">Open source on GitHub</a>
+  <a href="mailto:urosmijajlovic@gmail.com">urosmijajlovic@gmail.com</a>
+</footer>
+
+<script src="/config.js"></script>
+<script type="module" src="/js/sync.js"></script>
+</body>
+</html>
