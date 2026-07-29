@@ -91,13 +91,25 @@ def link(body: LinkBody, user=Depends(verify)):
 @app.get("/api/contrib/cursor")
 def cursor(user=Depends(verify)):
     # `cursor` = puzzles already stored (played days); `scan` = puzzle ranges already
-    # swept, played or not. The client needs both to skip everything it has.
-    return {"cursor": store.get_cursor(user["uid"]), "scan": store.get_scan(user["uid"])}
+    # swept, played or not. The client needs both to skip everything it has. Both are
+    # resolved by LinkedIn URN, so a fresh anonymous session doesn't re-sweep history
+    # an earlier session already contributed.
+    uid = user["uid"]
+    urn = (store.get_user(uid) or {}).get("linkedinUrn")
+    cur = store.get_cursor(uid, urn)
+    doc = store.get_scan_doc(uid, urn)
+    scan = store.scan_ranges(doc)
+    if doc is None and cur:
+        # synced before ranges existed → derive them instead of sweeping again.
+        # Only when the doc is absent: an emptied doc is a deliberate full re-scan.
+        scan = store.seed_scan(uid, urn, cur, store.swept_to_bottom(urn))
+    return {"cursor": cur, "scan": scan}
 
 @app.post("/api/contrib/scan/reset")
 def scan_reset(user=Depends(verify)):
     """Arm a full deep re-scan: the next sync re-checks every puzzle from scratch."""
-    store.reset_scan(user["uid"])
+    u = store.get_user(user["uid"]) or {}
+    store.reset_scan(user["uid"], u.get("linkedinUrn"))
     return {"ok": True}
 
 @app.post("/api/contrib/results")
@@ -112,7 +124,7 @@ def contrib(body: ContribBody, user=Depends(verify)):
     if results or observations:
         added = store.upsert_batch(user["uid"], name, u.get("linkedinUrn"), results, observations)
     if body.scan:
-        store.merge_scan(user["uid"], body.scan.dict())
+        store.merge_scan(user["uid"], body.scan.dict(), u.get("linkedinUrn"))
     # a scan-only checkpoint doesn't move the counter — don't spend a transaction on it
     contributed = (store.bump_and_maybe_unlock(user["uid"], added)
                    if (results or observations) else bool(u.get("contributed")))
