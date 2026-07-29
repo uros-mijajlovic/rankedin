@@ -30,7 +30,9 @@ The install screen shows an **animated demo** of exactly this.
   batch overwrites rather than duplicates.
 - The sync uploads in **small batches** as it goes, so a crash at 60% keeps the 60%.
 - A re-sync **only downloads what it doesn't already have.** Two things are tracked
-  per user: the **cursor** (puzzle numbers already stored) and the **scan range**
+  **per LinkedIn URN** — not per session, since sign-in is anonymous and the same
+  person gets a fresh uid in every browser / cleared profile / incognito window:
+  the **cursor** (puzzle numbers already stored) and the **scan range**
   `{lo, hi}` per game — every puzzle already *looked at*, including the days the user
   didn't play. The cursor alone isn't enough: days you skipped leave no row behind, so
   without the range a re-sync would re-fetch all ~460 puzzles of every game each time.
