@@ -40,9 +40,18 @@ class ObsRow(Row):
     name: str
     urn: Optional[str] = None
 
+class ScanRow(BaseModel):
+    """Checkpoint: "puzzles lo..hi of `game` have all been looked at". `mp` is the
+    highest puzzle this user actually played."""
+    game: str
+    lo: int
+    hi: int
+    mp: Optional[int] = 0
+
 class ContribBody(BaseModel):
     results: List[Row] = []
     observations: List[ObsRow] = []
+    scan: Optional[ScanRow] = None
 
 
 # ---- leaderboard cache (recompute at most every 60s) ----
@@ -81,7 +90,15 @@ def link(body: LinkBody, user=Depends(verify)):
 
 @app.get("/api/contrib/cursor")
 def cursor(user=Depends(verify)):
-    return {"cursor": store.get_cursor(user["uid"])}
+    # `cursor` = puzzles already stored (played days); `scan` = puzzle ranges already
+    # swept, played or not. The client needs both to skip everything it has.
+    return {"cursor": store.get_cursor(user["uid"]), "scan": store.get_scan(user["uid"])}
+
+@app.post("/api/contrib/scan/reset")
+def scan_reset(user=Depends(verify)):
+    """Arm a full deep re-scan: the next sync re-checks every puzzle from scratch."""
+    store.reset_scan(user["uid"])
+    return {"ok": True}
 
 @app.post("/api/contrib/results")
 def contrib(body: ContribBody, user=Depends(verify)):
@@ -91,8 +108,14 @@ def contrib(body: ContribBody, user=Depends(verify)):
         raise HTTPException(status_code=400, detail="Call /api/user/link first")
     results = [r.dict() for r in body.results]
     observations = [o.dict() for o in body.observations]
-    added = store.upsert_batch(user["uid"], name, u.get("linkedinUrn"), results, observations)
-    contributed = store.bump_and_maybe_unlock(user["uid"], added)
+    added = 0
+    if results or observations:
+        added = store.upsert_batch(user["uid"], name, u.get("linkedinUrn"), results, observations)
+    if body.scan:
+        store.merge_scan(user["uid"], body.scan.dict())
+    # a scan-only checkpoint doesn't move the counter — don't spend a transaction on it
+    contributed = (store.bump_and_maybe_unlock(user["uid"], added)
+                   if (results or observations) else bool(u.get("contributed")))
     return {"ok": True, "written": added, "contributed": contributed}
 
 @app.post("/api/contrib/complete")

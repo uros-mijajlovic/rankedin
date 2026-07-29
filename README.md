@@ -25,12 +25,26 @@ past day out of everyone's personal rows — going back as far as people have pl
 
 The install screen shows an **animated demo** of exactly this.
 
-## Resilience (interrupted syncs)
+## Resilience (interrupted syncs) & incremental re-sync
 - Uploads are **idempotent** — deterministic Firestore doc ids, so re-uploading a
   batch overwrites rather than duplicates.
 - The sync uploads in **small batches** as it goes, so a crash at 60% keeps the 60%.
-- On restart the client asks the API for its **cursor** (already-stored puzzles) and
-  **skips** them, resuming where it stopped.
+- A re-sync **only downloads what it doesn't already have.** Two things are tracked
+  per user: the **cursor** (puzzle numbers already stored) and the **scan range**
+  `{lo, hi}` per game — every puzzle already *looked at*, including the days the user
+  didn't play. The cursor alone isn't enough: days you skipped leave no row behind, so
+  without the range a re-sync would re-fetch all ~460 puzzles of every game each time.
+  With it, a same-day re-sync costs a couple of dozen requests instead of ~3,000.
+- The range is **checkpointed every 60 puzzles** as the sweep descends, so an
+  interrupted deep sync resumes at the frontier instead of starting over. A puzzle
+  that failed on a **429/5xx is retried and never recorded as swept**, so throttling
+  can't punch a permanent hole in the history.
+- The newest **14 puzzles per game are always re-checked** — the puzzle number doesn't
+  advance when you play today's game after syncing, and people fill in recent days
+  from the archive. For a full deep re-scan, the install screen has
+  **"Force a full deep re-scan"** (`POST /api/contrib/scan/reset`), which clears the
+  ranges so the next run re-reads everything.
+- The everyone-boards (last-14-day) pass always re-runs — that data changes daily.
 - The gate unlocks automatically once enough results land, and the client also calls
   `/complete`; either path is enough.
 

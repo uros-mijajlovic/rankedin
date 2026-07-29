@@ -15,6 +15,11 @@
   var ENDPAGE = "voyagerIdentityDashGameEndPage.b51bd3075ade52e7e7fb4e1e364df72f";
   var GAMES = { queens: 3, tango: 5, "mini-sudoku": 6, zip: 7, patches: 8, wend: 4, crossclimb: 2, pinpoint: 1 };
   var ORDER = ["queens", "tango", "mini-sudoku", "zip", "patches", "wend", "crossclimb", "pinpoint"];
+  // The newest N puzzles are re-checked even if already swept: the puzzle number doesn't
+  // move when you play today's game after syncing, and people fill in recent days from
+  // the archive. Only unplayed days in that window actually cost a request.
+  var RECHECK = 14;
+  var CHUNK = 60;     // checkpoint the swept frontier every N puzzles, so a crash keeps progress
 
   if (location.hostname.indexOf("linkedin.com") < 0) { alert("Otvori linkedin.com pa klikni Rankedin Sync."); return; }
   if (window.__rankedinRunning) { alert("Sinhronizacija već radi u drugom prozoru."); return; }
@@ -60,11 +65,25 @@
     return cur;
   }
 
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /* Returns {ok:true, rows} · {ok:false, retry:false} when LinkedIn simply has no such
+     board (a plain 4xx — safe to mark swept) · {ok:false, retry:true} when we were
+     throttled or the network died, which must NOT be recorded as swept. */
   async function board(type, pz, delta) {
     var v = "(gameUrn:" + urn(type, pz) + ",delta:" + delta + ",start:0,count:60)";
-    var r = await api("graphql?includeWebMetadata=true&variables=" + v + "&queryId=" + QID);
-    if (r.status !== 200) return null;
-    var j = await r.json();
+    var path = "graphql?includeWebMetadata=true&variables=" + v + "&queryId=" + QID;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var r = null;
+      try { r = await api(path); } catch (e) { await sleep(1500 * (attempt + 1)); continue; }
+      if (r.status === 200) { try { return { ok: true, rows: parseBoard(await r.json()) }; } catch (e) { return { ok: false, retry: true }; } }
+      if (r.status === 429 || r.status >= 500) { await sleep(2000 * (attempt + 1)); continue; }
+      return { ok: false, retry: false };
+    }
+    return { ok: false, retry: true };
+  }
+
+  function parseBoard(j) {
     var prof = {}, inc = j.included || [];
     for (var i = 0; i < inc.length; i++) { var e = inc[i]; if (e.entityUrn && e.firstName != null) prof[e.entityUrn] = (e.firstName + " " + (e.lastName || "")).trim(); }
     var coll = j.data && j.data.data && j.data.data.identityDashGameConnectionsEntitiesByOptedInToLeaderboardAndPlayed;
@@ -89,12 +108,12 @@
   }
 
   // ---- postMessage protocol with the /sync tab ----
-  var win = null, ackWaiters = {}, ackId = 0, cursor = {}, ready = false, gotCursor = false;
+  var win = null, ackWaiters = {}, ackId = 0, cursor = {}, scan = {}, ready = false, gotCursor = false;
   function send(type, payload) { win.postMessage(Object.assign({ rk: 1, type: type }, payload), SYNC_ORIGIN); }
-  function sendBatch(results, observations) {
+  function sendBatch(results, observations, scanCheckpoint) {
     return new Promise(function (resolve, reject) {
       var id = ++ackId; ackWaiters[id] = { resolve: resolve, reject: reject };
-      send("BATCH", { id: id, results: results, observations: observations });
+      send("BATCH", { id: id, results: results, observations: observations, scan: scanCheckpoint || null });
       setTimeout(function () { if (ackWaiters[id]) { delete ackWaiters[id]; reject(new Error("upload timeout")); } }, 30000);
     });
   }
@@ -102,7 +121,7 @@
     if (ev.origin !== SYNC_ORIGIN || !ev.data || ev.data.rk !== 1) return;
     var d = ev.data;
     if (d.type === "READY") { ready = true; }
-    else if (d.type === "CURSOR") { cursor = d.cursor || {}; gotCursor = true; }
+    else if (d.type === "CURSOR") { cursor = d.cursor || {}; scan = d.scan || {}; gotCursor = true; }
     else if (d.type === "ACK" && ackWaiters[d.id]) { ackWaiters[d.id].resolve(); delete ackWaiters[d.id]; }
     else if (d.type === "NACK" && ackWaiters[d.id]) { ackWaiters[d.id].reject(new Error(d.error || "upload failed")); delete ackWaiters[d.id]; }
     else if (d.type === "NEEDLOGIN") { ui("Uloguj se u otvorenom Rankedin prozoru pa čekaj…"); }
@@ -131,36 +150,67 @@
     for (var gi = 0; gi < games.length; gi++) {
       var slug = games[gi], type = GAMES[slug], top = cur[type];
       var have = {}; (cursor[slug] || []).forEach(function (p) { have[p] = 1; });
-      ui("Skupljam: " + slug, (done / totalUnits) * 100, "partije unazad od #" + top);
 
-      // 1) my history: sweep pz from top down to 1, skipping what we have
-      var pzs = []; for (var p = top; p >= 1; p--) if (!have[p]) pzs.push(p);
-      var maxPlayed = 0, buf = [], BATCH = 40;
-      await pool(pzs, 5, async function (pz) {
-        var rows = await board(type, pz, 0);
-        if (!rows) return;
-        var mine = rows.find(function (r) { return r.mine; });
-        if (mine) {
-          if (pz > maxPlayed) maxPlayed = pz;
-          buf.push({ game: slug, pz: pz, sec: mine.sec, rank: mine.rank, hint: mine.hint, miss: mine.miss });
-          if (buf.length >= BATCH) { var b = buf; buf = []; await sendBatch(b, []); }
-        }
-      });
-      if (buf.length) await sendBatch(buf, []);
+      // What the server already swept for this game (played days AND empty days).
+      var sc = scan[slug] || null;
+      var scLo = sc ? sc.lo : 0, scHi = sc ? sc.hi : -1;
+      var fresh = top - RECHECK;   // above this we always re-check, in case old days got played from the archive
+
+      // 1) my history: sweep pz from top down to 1, skipping everything already
+      //    stored (`have`) and everything already looked at (`scan`). On a re-sync
+      //    that leaves just the new days plus the small re-check window.
+      var pzs = [];
+      for (var p = top; p >= 1; p--) {
+        if (have[p]) continue;
+        if (p >= scLo && p <= scHi && p <= fresh) continue;
+        pzs.push(p);
+      }
+      var maxPlayed = (sc && sc.mp) || 0;
+      if (cursor[slug] && cursor[slug].length) maxPlayed = Math.max(maxPlayed, Math.max.apply(null, cursor[slug]));
+      ui("Skupljam: " + slug, (done / totalUnits) * 100,
+         pzs.length ? pzs.length + " novih partija (od #" + top + ")" : "sve već sačuvano");
+
+      var buf = [], BATCH = 40, blocked = 0;   // blocked = highest pz we couldn't confirm (throttled)
+      for (var ci = 0; ci < pzs.length; ci += CHUNK) {
+        var chunk = pzs.slice(ci, ci + CHUNK);
+        blocked = 0;
+        await pool(chunk, 5, async function (pz) {
+          var res = await board(type, pz, 0);
+          if (!res.ok) { if (res.retry && pz > blocked) blocked = pz; return; }
+          var mine = res.rows.find(function (r) { return r.mine; });
+          if (mine) {
+            if (pz > maxPlayed) maxPlayed = pz;
+            buf.push({ game: slug, pz: pz, sec: mine.sec, rank: mine.rank, hint: mine.hint, miss: mine.miss });
+            if (buf.length >= BATCH) { var b = buf; buf = []; await sendBatch(b, [], null); }
+          }
+        });
+        if (buf.length) { var rest = buf; buf = []; await sendBatch(rest, [], null); }
+        // Everything from the chunk's lowest puzzle up to `top` is now accounted for
+        // (fetched here, or already inside the old swept range) — checkpoint it, unless
+        // a throttled request left a hole.
+        var lo = blocked ? blocked + 1 : chunk[chunk.length - 1];
+        if (lo <= top) await sendBatch([], [], { game: slug, lo: lo, hi: top, mp: maxPlayed });
+        ui(null, ((done + (ci + chunk.length) / pzs.length) / totalUnits) * 100,
+           slug + ": " + Math.min(ci + CHUNK, pzs.length) + "/" + pzs.length);
+        if (blocked) break;                    // rate-limited: stop here, next run resumes
+      }
+      // Swept the whole game with no holes → claim 1..top, so the tail below the oldest
+      // pending puzzle (days we already had stored) isn't re-fetched next time either.
+      if (!blocked) await sendBatch([], [], { game: slug, lo: 1, hi: top, mp: maxPlayed });
 
       // 2) everyone-boards: last 14 days, anchored on a puzzle I actually played
-      if (maxPlayed || (cursor[slug] && cursor[slug].length)) {
-        var anchor = maxPlayed || Math.max.apply(null, cursor[slug]);
+      if (maxPlayed) {
+        var anchor = maxPlayed;
         var obs = [];
         for (var d = 0; d <= 13; d++) {
-          var rows2 = await board(type, anchor, d);
-          if (rows2 && rows2.length) {
+          var res2 = await board(type, anchor, d);
+          if (res2.ok && res2.rows.length) {
             // convert delta-day to an approximate puzzle number for that game
             var apz = top - d;
-            rows2.forEach(function (r) { obs.push({ game: slug, pz: apz, name: r.name, urn: r.urn, sec: r.sec, rank: r.rank, hint: r.hint, miss: r.miss }); });
+            res2.rows.forEach(function (r) { obs.push({ game: slug, pz: apz, name: r.name, urn: r.urn, sec: r.sec, rank: r.rank, hint: r.hint, miss: r.miss }); });
           }
         }
-        if (obs.length) await sendBatch([], obs);
+        if (obs.length) await sendBatch([], obs, null);
       }
       done++; ui("Skupljam: " + slug, (done / totalUnits) * 100);
     }

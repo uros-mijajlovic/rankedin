@@ -57,10 +57,14 @@ window.addEventListener("message", async ev => {
     try {
       await apiRetry("/api/user/link", { method: "POST", body: JSON.stringify({ urn: d.urn, name: d.name }) });
       const c = await apiRetry("/api/contrib/cursor", { method: "GET" });
-      toOpener("CURSOR", { cursor: c.cursor || {} });
-      $("s-note").textContent = "Resuming where I left off (skipping what's already saved).";
+      // `cursor` = puzzles already stored, `scan` = puzzle ranges already looked at.
+      // The second one is what keeps a re-sync from re-reading every past day again.
+      toOpener("CURSOR", { cursor: c.cursor || {}, scan: c.scan || {} });
+      $("s-note").textContent = Object.keys(c.scan || {}).length
+        ? "Only pulling what's new — everything already saved is skipped."
+        : "Resuming where I left off (skipping what's already saved).";
     } catch (e) {
-      toOpener("CURSOR", { cursor: {} });   // fall back to full re-sync (idempotent)
+      toOpener("CURSOR", { cursor: {}, scan: {} });   // fall back to full re-sync (idempotent)
     }
   }
 
@@ -68,7 +72,7 @@ window.addEventListener("message", async ev => {
     try {
       const r = await apiRetry("/api/contrib/results", {
         method: "POST",
-        body: JSON.stringify({ results: d.results || [], observations: d.observations || [] })
+        body: JSON.stringify({ results: d.results || [], observations: d.observations || [], scan: d.scan || null })
       });
       resCount += (d.results || []).length;
       obsCount += (d.observations || []).length;

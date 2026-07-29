@@ -65,10 +65,31 @@ async function goInstall() {
     link.href = bm.trim();
     link.addEventListener("click", e => { e.preventDefault(); flashHint(); });
   } catch (_) {}
+  wireFullScan();
   stopPoll();
   mePoll = setInterval(async () => {                 // detect the sync finishing in the other tab
     try { const me = await api("/api/me"); if (me.contributed) { stopPoll(); openDashboard(me); } } catch (_) {}
   }, 4000);
+}
+
+// A sync normally skips every puzzle range it has already swept. This clears that
+// memory server-side so the next click of the bookmarklet re-reads everything.
+let fullScanWired = false;
+function wireFullScan() {
+  if (fullScanWired) return;
+  const a = $("btn-fullscan");
+  if (!a) return;
+  fullScanWired = true;
+  a.addEventListener("click", async e => {
+    e.preventDefault();
+    a.textContent = "Arming…";
+    try {
+      await api("/api/contrib/scan/reset", { method: "POST" });
+      $("rescan-line").textContent = "Full re-scan armed — click 🎮 Rankedin Sync now; it will take a few minutes.";
+    } catch (err) {
+      a.textContent = "Couldn't arm it (" + err.message + ") — try again";
+    }
+  });
 }
 
 function flashHint() {

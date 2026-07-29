@@ -2,12 +2,20 @@
 touch Firestore directly — every write is validated by the API first.
 
 Collections:
-  users/{uid}          -> { linkedinUrn, name, contributed, resultCount, syncCompletedAt, updatedAt }
+  users/{uid}          -> { linkedinUrn, name, contributed, resultCount, syncCompletedAt,
+                            scan: {<game>: {lo, hi, mp}}, updatedAt }
   results/{uid}__{g}__{pz}      -> { uid, name, game, pz, sec, rank, hint, miss }   (deep personal history)
   observations/{g}__{pz}__{key} -> { game, pz, name, sec, rank, hint, miss, srcUid } (last-14-day field, incl. non-members)
 
 Idempotency: deterministic document ids mean a re-uploaded batch overwrites the
 same docs (no duplicates), so an interrupted sync can be re-run safely.
+
+Scan ranges: `scan[game] = {lo, hi, mp}` means "every puzzle number in [lo, hi]
+has already been *looked at* for this user" — including the days they did not
+play, which leave no result row behind. Without it a re-sync would re-fetch all
+several hundred puzzles per game every single time, since only played days show
+up in the cursor. `mp` is the highest puzzle the user actually played (used to
+anchor the everyone-boards pass without reading the cursor).
 """
 import re, time
 from google.cloud import firestore
@@ -45,6 +53,42 @@ def get_cursor(uid):
         r = d.to_dict()
         out.setdefault(r["game"], []).append(r["pz"])
     return out
+
+
+def get_scan(uid):
+    """Per-game swept ranges: {game: {lo, hi, mp}}. See module docstring."""
+    u = get_user(uid) or {}
+    return u.get("scan") or {}
+
+
+def merge_scan(uid, entry):
+    """Widen one game's swept range. The client only ever checkpoints a segment
+    adjacent to (or overlapping) what it was told it already had, so min/max
+    merging keeps the range contiguous."""
+    game = _safe(entry["game"])
+    lo, hi, mp = int(entry["lo"]), int(entry["hi"]), int(entry.get("mp") or 0)
+    if lo < 1 or hi < lo:
+        return
+    ref = _db.collection(USERS).document(uid)
+
+    @firestore.transactional
+    def _tx(tx):
+        snap = ref.get(transaction=tx)
+        scan = (snap.to_dict() or {}).get("scan", {}) if snap.exists else {}
+        old = scan.get(game) or {}
+        merged = {
+            "lo": min(int(old.get("lo", lo)), lo),
+            "hi": max(int(old.get("hi", hi)), hi),
+            "mp": max(int(old.get("mp", 0)), mp),
+        }
+        tx.set(ref, {"scan": {game: merged}, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+    _tx(_db.transaction())
+
+
+def reset_scan(uid):
+    """Forget the swept ranges so the next sync does a full deep re-scan."""
+    _db.collection(USERS).document(uid).set(
+        {"scan": firestore.DELETE_FIELD, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
 
 
 def upsert_batch(uid, name, urn, results, observations):
